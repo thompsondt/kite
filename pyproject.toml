@@ -5,7 +5,7 @@ description = "KITE - The Keyword Insight and Term Extraction Project"
 authors = [
     {name = "David T Thompson", email = "david.thompson86@gmail.com"},
 ]
-dependencies = []
+dependencies = ["haystack-ai>=2.12.1", "markdown-it-py>=3.0.0", "mdit-plain>=1.0.1", "nltk>=3.9.1", "sentence-transformers>=3.0.0"]
 requires-python = ">=3.12"
 readme = "README.md"
 license = {text = "MIT"}
@@ -17,3 +17,20 @@ build-backend = "pdm.backend"
 
 [tool.pdm]
 distribution = true
+
+
+[tool.pdm.scripts]
+lint = { composite = ["black --check .", "isort --check-only src tests"] }
+format = { composite = ["black .", "isort src tests"] }
+
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "isort>=6.0.1",
+]
+
+
+[tool.isort]
+profile = "black"
+src_paths = ["src", "tests"]
