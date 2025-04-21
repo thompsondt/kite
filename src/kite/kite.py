@@ -1,15 +1,20 @@
 import cmd
-from pathlib import Path
+import json
 
 import click
-from haystack import Pipeline
+from haystack import Document, Pipeline
 from haystack.components.converters import MarkdownToDocument, TextFileToDocument
 from haystack.components.embedders import (
     SentenceTransformersDocumentEmbedder,
     SentenceTransformersTextEmbedder,
 )
+from haystack.components.joiners import DocumentJoiner
 from haystack.components.preprocessors import DocumentCleaner, DocumentSplitter
-from haystack.components.retrievers.in_memory import InMemoryEmbeddingRetriever
+from haystack.components.rankers import TransformersSimilarityRanker
+from haystack.components.retrievers.in_memory import (
+    InMemoryBM25Retriever,
+    InMemoryEmbeddingRetriever,
+)
 from haystack.components.writers import DocumentWriter
 from haystack.document_stores.in_memory import InMemoryDocumentStore
 
@@ -18,42 +23,65 @@ config = {"results": 10}
 document_store = InMemoryDocumentStore()
 
 
-def run_indexing(document_store=document_store):
+def run_indexing(src, document_store=document_store):
 
     indexing_pipeline = Pipeline()
-    indexing_pipeline.add_component("converter", TextFileToDocument())
-    # indexing_pipeline.add_component("cleaner", DocumentCleaner())
-    indexing_pipeline.add_component(
-        "splitter", DocumentSplitter(split_by="line", split_length=1)
-    )
     indexing_pipeline.add_component("embedder", SentenceTransformersDocumentEmbedder())
     indexing_pipeline.add_component(
         "writer", DocumentWriter(document_store=document_store)
     )
-    indexing_pipeline.connect("converter", "splitter")
-    indexing_pipeline.connect("splitter", "embedder")
     indexing_pipeline.connect("embedder", "writer")
 
-    path = "instance/corpus"
-    files = list(Path(path).glob("*.md"))
+    def get_experiences(experience={}):
+        documents = []
+        if experience.get("bullets") is None:
+            return documents
+        bullets = experience.pop("bullets")
+        for bullet in bullets:
+            documents.append(Document(content=bullet, meta=experience))
+        return documents
 
-    print("Indexing files.")
-    indexing_pipeline.run({"converter": {"sources": files}})
+    def get_documents():
+
+        documents = []
+        with open(src) as file:
+            experience = json.load(file)
+        for item in experience:
+            documents = documents + get_experiences(item)
+        return documents
+
+    documents = get_documents()
+    print(f"Indexing {len(documents)} documents.")
+    indexing_pipeline.run({"embedder": {"documents": documents}})
 
 
 def run_query(query, document_store=document_store):
     ## Querying Pipeline
     query_pipeline = Pipeline()
+    query_pipeline.add_component("document_joiner", DocumentJoiner())
+    query_pipeline.add_component("ranker", TransformersSimilarityRanker())
+    query_pipeline.add_component(
+        "bm25_retriever", InMemoryBM25Retriever(document_store=document_store)
+    )
     query_pipeline.add_component("embedder", SentenceTransformersTextEmbedder())
     query_pipeline.add_component(
-        "retriever",
+        "embedding_retriever",
         InMemoryEmbeddingRetriever(
             document_store=document_store, scale_score=True, top_k=config["results"]
         ),
     )
-    query_pipeline.connect("embedder.embedding", "retriever.query_embedding")
+    query_pipeline.connect("embedder.embedding", "embedding_retriever.query_embedding")
+    query_pipeline.connect("bm25_retriever", "document_joiner")
+    query_pipeline.connect("embedding_retriever", "document_joiner")
+    query_pipeline.connect("document_joiner", "ranker")
 
-    return query_pipeline.run({"embedder": {"text": query}})["retriever"]["documents"]
+    return query_pipeline.run(
+        {
+            "embedder": {"text": query},
+            "bm25_retriever": {"query": query},
+            "ranker": {"query": query},
+        }
+    )["ranker"]["documents"]
 
 
 def display_docs(docs):
@@ -64,7 +92,9 @@ def display_docs(docs):
         md_number = click.style(f"- {count}.", fg="green")
         md_content = click.style(f"{document.content.rstrip()}")
         md_source = click.style(
-            f"**(see: {document.meta['file_path']})**", italic=True, fg="blue"
+            f"**(see: {document.meta.get("file_path",document.meta)})**",
+            italic=True,
+            fg="blue",
         )
         click.echo(" ".join([md_number, md_content, md_source]), color=True)
 
@@ -75,8 +105,12 @@ class KiteShell(cmd.Cmd):
     prompt = "(kite): "
 
     def do_index(self, arg):
-        "Run the indexing pipeline"
-        run_indexing(document_store=document_store)
+        "index data from a json data file\nUsage: index [SRC]"
+        src = arg or click.prompt("JSON file path")
+        try:
+            run_indexing(src, document_store=document_store)
+        except FileNotFoundError as e:
+            print(e)
 
     def do_query(self, arg):
         query = click.prompt(click.style("\nQUERY", fg="bright_white", bg="magenta"))

@@ -5,7 +5,7 @@ description = "KITE - The Keyword Insight and Term Extraction Project"
 authors = [
     {name = "David T Thompson", email = "david.thompson86@gmail.com"},
 ]
-dependencies = ["haystack-ai>=2.12.1", "markdown-it-py>=3.0.0", "mdit-plain>=1.0.1", "nltk>=3.9.1", "sentence-transformers>=3.0.0"]
+dependencies = ["haystack-ai>=2.12.1", "markdown-it-py>=3.0.0", "mdit-plain>=1.0.1", "nltk>=3.9.1", "sentence-transformers>=3.0.0", "accelerate>=1.6.0"]
 requires-python = ">=3.12"
 readme = "README.md"
 license = {text = "MIT"}
