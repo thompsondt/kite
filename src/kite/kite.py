@@ -1,5 +1,6 @@
 import cmd
 import json
+from typing import List
 
 import click
 from haystack import Document, Pipeline
@@ -55,7 +56,7 @@ def run_indexing(src, document_store=document_store):
     indexing_pipeline.run({"embedder": {"documents": documents}})
 
 
-def run_query(query, document_store=document_store):
+def run_query(query, document_store=document_store) -> List[Document]:
     ## Querying Pipeline
     query_pipeline = Pipeline()
     query_pipeline.add_component("document_joiner", DocumentJoiner())
